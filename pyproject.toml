@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "course compass"
+version = "0.1.0"
+description = "A course suggestor for all things you could think of"
+authors = ["Rithik Raj <rithu0644@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+streamlit = "^1.26.0"
+langchain = { extras = ["llms"], version = "^0.0.264" }
+pysondb = "^1.6.7"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
