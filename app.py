@@ -9,13 +9,11 @@ from langchain.tools import BaseTool
 
 from schemas import Discover, Course
 
-keys = st.secrets
-
 
 def getDescriptionAndWiki(topic: str) -> Dict[str, str]:
     # Create a new instance of the OpenAI class
     llm = OpenAI(
-        openai_api_key=keys["OPENAI_API_KEY"],
+        openai_api_key=st.secrets["OPENAI_API_KEY"],
         max_tokens=200,
         temperature=0,
         client=None,
@@ -33,7 +31,7 @@ def getDescriptionAndWiki(topic: str) -> Dict[str, str]:
         tools=tools,
         llm=llm,
         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        verbose=True,
+        verbose=False,
     )
 
     # Create the template
@@ -57,11 +55,11 @@ def getCourses(topic: str) -> List[Course]:
     """
 
     # Set Serper API URL
-    url = keys["SERPER_API_URL"]
+    url = st.secrets["SERPER_API_URL"]
 
     # Set Serper API headers
     headers = {
-        "X-API-KEY": keys["SERPER_API_KEY"],
+        "X-API-KEY": st.secrets["SERPER_API_KEY"],
         "Content-Type": "application/json",
     }
 
