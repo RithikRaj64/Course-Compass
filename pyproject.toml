@@ -6,7 +6,7 @@ authors = ["Rithik Raj <rithu0644@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 streamlit = "^1.26.0"
 langchain = { extras = ["llms"], version = "^0.0.264" }
 pysondb = "^1.6.7"
