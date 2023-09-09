@@ -10,6 +10,10 @@ python = "^3.10"
 streamlit = "^1.26.0"
 langchain = { extras = ["llms"], version = "^0.0.264" }
 pysondb = "^1.6.7"
+streamlit-option-menu = "^0.3.6"
+pypdf2 = "^3.0.1"
+bert-extractive-summarizer = "^0.10.1"
+pymongo = "^4.5.0"
 
 
 [build-system]

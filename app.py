@@ -2,6 +2,11 @@ import streamlit as st
 import json
 import requests
 from typing import Dict, List
+from streamlit_option_menu import option_menu  # type: ignore
+
+from PyPDF2 import PdfReader
+
+from pymongo import MongoClient
 
 from langchain.llms import OpenAI
 from langchain.agents import AgentExecutor, AgentType, initialize_agent, load_tools  # type: ignore
@@ -9,8 +14,53 @@ from langchain.tools import BaseTool
 
 from schemas import Discover, Course
 
+client = MongoClient(st.secrets["DB_URI"])  # type: ignore
+db = client["CourseCompass"]  # type: ignore
+collection = db["data"]  # type: ignore
+
+
+def store(result: dict[str, str | list[dict[str, str]]]):
+    """
+    Store the result in the database
+    """
+    collection.insert_one(result)  # type: ignore
+
+
+def ifExists(topic: str) -> Discover | None:
+    """
+    Check if the topic exists in the database and return it
+    """
+    result = collection.find_one({"topic": topic})  # type: ignore
+
+    if result == None:
+        return None
+
+    # Convert the courses to a list of Course objects
+    courses: List[Course] = []
+
+    for r in result["courses"]:  # type: ignore
+        cr: Course = Course(
+            topic=r["topic"],  # type: ignore
+            url=r["url"],  # type: ignore
+            description=r["description"],  # type: ignore
+        )
+        courses.append(cr)
+
+    # Create Discover object
+    response: Discover = Discover(
+        topic=result["topic"],  # type: ignore
+        description=result["description"],  # type: ignore
+        url=result["url"],  # type: ignore
+        courses=courses,
+    )
+
+    return response
+
 
 def getDescriptionAndWiki(topic: str) -> Dict[str, str]:
+    """
+    Get the description about the topic and a link to know more about it
+    """
     # Create a new instance of the OpenAI class
     llm = OpenAI(
         openai_api_key=st.secrets["OPENAI_API_KEY"],
@@ -31,7 +81,7 @@ def getDescriptionAndWiki(topic: str) -> Dict[str, str]:
         tools=tools,
         llm=llm,
         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        verbose=False,
+        verbose=True,
     )
 
     # Create the template
@@ -40,16 +90,13 @@ def getDescriptionAndWiki(topic: str) -> Dict[str, str]:
     # Generate the response
     response: str = agent.run(template.format(topic=topic))
 
-    # Print the response
-    print(response)
-
     # Convert the response to a dictionary
     result = json.loads(response)
 
     return result
 
 
-def getCourses(topic: str) -> List[Course]:
+def getCourses(topic: str) -> list[dict[str, str]]:
     """
     Get links from Serper API
     """
@@ -70,75 +117,123 @@ def getCourses(topic: str) -> List[Course]:
     response = requests.request("POST", url, headers=headers, data=payload)  # type: ignore
     response_dict = response.json()
 
-    # Get links from response
-    links: List[Course] = []
-
-    for result in response_dict["organic"]:
-        cr: Course = Course(
-            topic=result["title"],
-            url=result["link"],
-            description=result["snippet"],
-        )
-        links.append(cr)
-
-    # Print links
-    print(links)
-
-    return links
+    return response_dict
 
 
 def discover_API(topic: str) -> Discover:
     """
     Discover a topic
     """
-    # Get description and wiki
+    # Remove spaces and convert to lowercase
+    topic_db = topic.lower().replace(" ", "")
+
+    # Extract the details if in db
+    db = ifExists(topic_db)
+
+    # Check if topic exists in db and return it
+    if db != None:
+        print("Topic found in DB")
+        return db
+
+    # Get description and links
     result = getDescriptionAndWiki(topic)
+    result_courses = getCourses(topic)
+
+    # Convert the links to a list of Course objects
+    links: List[Course] = []
+
+    for r in result_courses["organic"]:  # type: ignore
+        cr: Course = Course(
+            topic=r["title"],  # type: ignore
+            url=r["link"],  # type: ignore
+            description=r["snippet"],  # type: ignore
+        )
+        links.append(cr)
+
+    courses: list[dict[str, str]] = []
+
+    # Convert the links to a list of dictionaries
+    for r in result_courses["organic"]:  # type: ignore
+        courses.append({"topic": r["title"], "url": r["link"], "description": r["snippet"]})  # type: ignore
+
+    # Store the result in the database
+    store(
+        {
+            "topic": topic_db,
+            "description": result["description"],
+            "url": result["url"],
+            "courses": courses,
+        }
+    )
 
     # Create response
     response: Discover = Discover(
-        topic=topic,
+        topic=topic_db,
         description=result["description"],  # type: ignore
         url=result["url"],  # type: ignore
-        courses=getCourses(topic),
+        courses=links,
     )
 
     return response
 
 
+# Add a title
 st.title("Course Compass")
 
-# Put a line under the title
-st.markdown("---")
+# # Put a line under the title
+# st.markdown("---")
 
-# Add an input field
-topic = st.text_input("Enter the topic")
+# Create tabs
+tabs = st.tabs(["Discover Courses", "Extract Text"])
 
-# Add a button
-if st.button("Submit"):
-    # Call the API
-    response: Discover = discover_API(topic)
+# Discover page
+with tabs[0]:
+    # Add an input field
+    topic = st.text_input("Enter the topic")
 
-    # Display the description
-    st.title("Description")
-    st.write(response.description)  # type: ignore
+    if st.button("Submit"):
+        # Call the API
+        response = discover_API(topic)
 
-    # Display the url
-    st.write("To Learn More Visit")  # type: ignore
-    st.write(response.url)  # type: ignore
+        # Display the description
+        st.title("Description")
+        st.write(response.description)  # type: ignore
 
-    st.markdown("---")
-
-    # Display the courses one by one
-    st.title("Courses")
-
-    for course in response.courses:  # type: ignore
-        st.write("**Title:**")  # type: ignore
-        st.write(course.topic)  # type: ignore
-
-        st.write("**Description:**")  # type: ignore
-        st.write(course.description)  # type: ignore
-
-        st.write("**URL:**")  # type: ignore
-        st.write(course.url)  # type: ignore
+        # Display the url
+        st.write("To Learn More Visit")  # type: ignore
+        st.write(response.url)  # type: ignore
 
         st.markdown("---")
+
+        # Display the courses one by one
+        st.title("Courses")
+
+        for course in response.courses:  # type: ignore
+            st.write("**Title:**")  # type: ignore
+            st.write(course.topic)  # type: ignore
+
+            st.write("**Description:**")  # type: ignore
+            st.write(course.description)  # type: ignore
+
+            st.write("**URL:**")  # type: ignore
+            st.write(course.url)  # type: ignore
+
+            st.markdown("---")
+
+# Extract page
+with tabs[1]:
+    # add a file input
+    file = st.file_uploader("Upload your material")
+
+    if st.button("Upload "):
+        pdf = PdfReader(file)  # type: ignore
+
+        text = ""
+
+        # Extract text from the pdf
+        for page in pdf.pages:
+            text += page.extract_text()
+
+        if text != "":
+            st.title("Contents of your Material : ")
+            st.write(text)  # type: ignore
